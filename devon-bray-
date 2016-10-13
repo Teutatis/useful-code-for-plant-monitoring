@@ -1,0 +1,8 @@
+#You’ll need to enable SPI on your Pi in order to use the MCP3008 ADC. Do this by running the following commands:
+sudo nano /etc/modprobe.d/raspi-blacklist.conf
+#Comment out the spi-bcm2708 line so it looks like this:
+#blacklist spi-bcm2708
+#Then run this to make it more permanent.
+sudo modprobe spi-bcm2708
+#And finally reboot your Pi with:
+sudo reboot
