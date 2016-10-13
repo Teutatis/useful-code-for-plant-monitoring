@@ -1,0 +1,89 @@
+#Then the php code that renders the pChart graph. More details for installing pChart here 
+#http://www.esologic.com/?p=574
+#and officially here
+#http://wiki.pchart.net/doc.installation.html
+
+<?php
+ 
+/* Include all the classes */
+include("/srv/www/lib/pChart/class/pData.class.php");
+include("/srv/www/lib/pChart/class/pDraw.class.php");
+include("/srv/www/lib/pChart/class/pImage.class.php");
+ 
+$myData = new pData(); /* Create your dataset object */
+ 
+$db = mysql_connect("localhost", "piplanter", "password"); //location of server, db username, db pass
+mysql_select_db("PiPlanter_DB", $db);
+ 
+$Requete = "SELECT * FROM PiPlanter_DB." .$argv[1];
+ 
+$Result = mysql_query($Requete, $db);
+ 
+if (!$Result) { // add this check.
+die('Invalid query: ' . mysql_error());
+}
+ 
+/*This fetches the data from the mysql database, and adds it to pchart as points*/
+while($row = mysql_fetch_array($Result))
+{
+$Time = $row["Time"];
+$myData->addPoints($Time,"Time");
+ 
+$P_MST0 = $row["P_MST0"];
+$myData->addPoints($P_MST0,"P_MST0");
+$P_MST1 = $row["P_MST1"];
+$myData->addPoints($P_MST1,"P_MST1");
+ 
+$A_TMP0 = $row["A_TMP0"];
+$myData->addPoints($A_TMP0,"A_TMP0");
+ 
+$A_LDR0 = $row["A_LDR0"];
+$myData->addPoints($A_LDR0,"A_LDR0");
+}
+ 
+$myData-> setSerieOnAxis("P_MST0", 2);
+$myData-> setSerieOnAxis("P_MST1", 2);
+$myData-> setAxisName(2, "Relative Moisture [%]");
+ 
+$myData-> setSerieOnAxis("A_TMP0", 0); //assigns the data to the first axis
+$myData-> setAxisName(0, "Degrees [F]"); //adds the label to the first axis
+ 
+$myData-> setSerieOnAxis("A_LDR0", 1);
+$myData-> setAxisName(1, "Ambient Light Level [%]");
+ 
+$myData->setAbscissa("Time"); //sets the time data set as the x axis label
+ 
+$myData-> setSerieWeight("P_MST0",1); //draws the line thickness
+ 
+$myData->setPalette("P_MST0",array("R"=>58,"G"=>95,"B"=>205,"Alpha"=>80)); //sets the line color
+$myData-> setSerieWeight("P_MST1",1);
+$myData->setPalette("P_MST1",array("R"=>39,"G"=>64,"B"=>139,"Alpha"=>80));
+ 
+$myData-> setSerieWeight("A_LDR0",2);
+$myData->setPalette("A_LDR0",array("R"=>255,"G"=>255,"B"=>0,"Alpha"=>80));
+$myData-> setSerieTicks("A_LDR0", 4);
+ 
+$myData-> setSerieWeight("A_TMP0",2);
+$myData->setPalette("A_TMP0",array("R"=>255,"G"=>0,"B"=>0,"Alpha"=>80));
+$myData-> setSerieTicks("A_TMP0", 4);
+ 
+// $myPicture = new pImage(1000,700,$myData); /* Create a pChart object and associate your dataset */
+// $myPicture->setFontProperties(array("FontName"=>"/srv/www/lib/pChart/fonts/pf_arma_five.ttf","FontSize"=>6)); /* Choose a nice font */
+// $myPicture->setGraphArea(210,40,900,600); /* Define the boundaries of the graph area */
+// $myPicture->drawScale(array("LabelRotation"=>320)); /* Draw the scale, keep everything automatic */
+ 
+$myPicture = new pImage(1300,700,$myData); /* Create a pChart object and associate your dataset */
+$myPicture->setFontProperties(array("FontName"=>"/srv/www/lib/pChart/fonts/pf_arma_five.ttf","FontSize"=>6)); /* Choose a nice font */
+$myPicture->setGraphArea(210,40,1200,600); /* Define the boundaries of the graph area */
+$myPicture->drawScale(array("LabelRotation"=>320)); /* Draw the scale, keep everything automatic */
+ 
+$Settings = array("R"=>250, "G"=>250, "B"=>250, "Dash"=>1, "DashR"=>0, "DashG"=>0, "DashB"=>0);
+ 
+/*The combination makes a cool looking graph*/
+$myPicture->drawPlotChart(array("DisplayValues"=>TRUE,"LabelRotation"=>320));
+$myPicture->drawLineChart();
+$myPicture->drawLegend(30,30); //adds the legend
+ 
+$time = date("d-M-Y_H:i:s");
+$myPicture->render($argv[2].$time.".png");
+print($argv[2].$time.".png");
