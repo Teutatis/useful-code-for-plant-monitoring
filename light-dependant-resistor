@@ -1,0 +1,14 @@
+# A simple piece of code to read the value of an LDR using a capacitor and gpiozero library.
+
+# https://www.raspberrypi.org/learning/physical-computing-with-python/ldr
+
+# Hardware connections:
+# 1) Connect one leg of the LDR to the 3V3 pin.
+# 2) Connect the short leg (should have a negative stripe on the body) of a 1µF capacitor to a ground pin.
+# 3) Connect the other leg of the LDR and the other long leg of the capacitor to the same GPIO pin
+
+from gpiozero import LightSensor, Buzzer
+
+  ldr = LightSensor(4)  # alter if using a different pin
+  while True:
+      print(ldr.value)
