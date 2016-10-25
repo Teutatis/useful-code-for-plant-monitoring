@@ -1,0 +1,501 @@
+# Joel Gehringer - Pi Planter - Main Code - 1 of 2
+# http://joelgehringer.com/piplanter/#main
+# http://joelgehringer.com/piplanter/jg_piplanter20150715.zip
+
+import MySQLdb
+from datetime import datetime
+import time
+from time import sleep
+import os
+import sys
+import spidev
+import RPi.GPIO as GPIO
+import logging
+logging.basicConfig()
+from apscheduler.schedulers.blocking import BlockingScheduler
+import subprocess
+
+def ConsoleDebug(input):
+	debug = '[' + datetime.now().strftime("%m-%d-%Y_%I-%M-%S-%p") + '] Debug: ' + input
+	print debug
+	file = open(str(os.getcwd()) + "/log.txt", "a")
+	file.write(debug + "\n")
+	file.close()
+
+def FirstTimeSetup():
+	global cycle
+
+	ConsoleDebug('---------------- NEW INSTANCE OF PIPLANTER ----------------')
+
+	MySQL_Commands = {1 : 'CREATE DATABASE IF NOT EXISTS PiPlanter_DB', 2: "GRANT ALL ON `PiPlanter_DB`.* TO 'piplanter'@'localhost' IDENTIFIED BY 'password'", 3: 'USE PiPlanter_DB' }
+	for i in MySQL_Commands.itervalues():
+		ConsoleDebug('MYSQL COMMAND: ' + i)
+		cursor.execute(i)
+
+	MySQLTableSetup(False,'Daily',True)
+	VisualLocationSetup(True,'dontcare')
+	ConsoleDebug('Setup Complete')
+	cycle = 0
+
+def MySQLTableSetup(full,kind,first):
+
+	global MySQL_Tables
+
+	now = datetime.now().strftime("%m_%d_%Y__%I_%M_%S%p")
+
+	if first == True:
+		MySQL_Tables = { 'MySQLTable_Daily' : 'DailyTable' + now, 'MySQLTable_Weekly' : 'WeeklyTable' + now, 'MySQLTable_Monthly' : 'MonthlyTable' + now}
+		if full == False:
+			CreateTables = {0: "CREATE TABLE " + MySQL_Tables['MySQLTable_Daily'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))", 1 : "CREATE TABLE " + MySQL_Tables['MySQLTable_Weekly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))" , 2 : "CREATE TABLE " + MySQL_Tables['MySQLTable_Monthly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))"}
+			for i in CreateTables.itervalues():
+				ConsoleDebug('MYSQL COMMAND: ' + i)
+				cursor.execute(i)
+		if full == True:
+			CreateTables = {0: "CREATE TABLE " + MySQL_Tables['MySQLTable_Daily'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))", 1:"CREATE TABLE " + MySQL_Tables['MySQLTable_Weekly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))" , 2:"CREATE TABLE " + MySQL_Tables['MySQLTable_Monthly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))" }
+			for i in CreateTables.itervalues():
+				ConsoleDebug('MYSQL COMMAND: ' + i)
+				cursor.execute(i)
+
+	elif first == False:
+		if kind == 'Daily':
+			ConsoleDebug('Daily Database Name Has Been Updated')
+			MySQL_Tables['MySQLTable_Daily'] = 'DailyTable_' + now
+			ConsoleDebug(MySQL_Tables['MySQLTable_Daily'])
+			if full == False:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Daily'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))"
+			elif full  == True:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Daily'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))"
+		elif kind == 'Weekly':
+			ConsoleDebug('Daily Database Name Has Been Updated')
+			MySQL_Tables['MySQLTable_Weekly'] = 'WeeklyTable_' + now
+			ConsoleDebug(MySQL_Tables['MySQLTable_Weekly'])
+			if full == False:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Weekly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))"
+			elif full  == True:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Weekly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))"
+		elif kind == 'Monthly':
+			ConsoleDebug('Daily Database Name Has Been Updated')
+			MySQL_Tables['MySQLTable_Monthly'] = 'MonthlyTable_' + now
+			ConsoleDebug(MySQL_Tables['MySQLTable_Monthly'])
+			if full == False:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Monthly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_MST0 VARCHAR(100),P_MST1 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100))"
+			elif full  == True:
+				CreateTable = "CREATE TABLE " + MySQL_Tables['MySQLTable_Monthly'] + "(Sample_Number INT NOT NULL AUTO_INCREMENT PRIMARY KEY,Time VARCHAR(100),P_TMP0 VARCHAR(100),P_MST0 VARCHAR(100),P_TMP1 VARCHAR(100),P_MST1 VARCHAR(100),P_TMP2 VARCHAR(100),P_MST2 VARCHAR(100),P_TMP3 VARCHAR(100),P_MST3 VARCHAR(100),A_TMP0 VARCHAR(100),A_LDR0 VARCHAR(100),A_LDR1 VARCHAR(100),A_MST0 VARCHAR(100))"		
+
+		ConsoleDebug('MYSQL: ' + CreateTable)
+		cursor.execute(CreateTable)
+
+	ConsoleDebug('Current Daily: ' + MySQL_Tables['MySQLTable_Daily'])
+	ConsoleDebug('Current Weekly: ' + MySQL_Tables['MySQLTable_Weekly'])
+	ConsoleDebug('Current Monthly: ' + MySQL_Tables['MySQLTable_Monthly'])
+
+def VisualLocationSetup(first,kind):
+	global VisualLocation
+
+	now = datetime.now().strftime("%m_%d_%Y__%I_%M_%S%p")
+
+	runninglocation = str(os.getcwd())
+	if first == True:
+
+		ConsoleDebug('Creating Video Directory')
+		if not os.path.exists(runninglocation + '/videos/'):
+			os.makedirs(runninglocation + '/videos/')
+			ConsoleDebug('Video Directory Created')
+		else:
+			ConsoleDebug('Video Directory Already Exists')
+
+		ConsoleDebug('Creating Daily Video Directory')
+		if not os.path.exists(runninglocation + '/videos/dailys/'):
+			os.makedirs(runninglocation + '/videos/dailys/')
+		else:
+			ConsoleDebug('Daily Video Directory Already Exists')
+
+		ConsoleDebug('Creating Image Directory')
+		if not os.path.exists(runninglocation + '/images/'):
+			os.makedirs(runninglocation + '/images/')
+		else:
+			ConsoleDebug('Image Directory Already Exists')
+
+		ConsoleDebug('Creating Daily Image Directory')
+		if not os.path.exists(runninglocation + '/images/dailys/'):
+			os.makedirs(runninglocation + '/images/dailys/')
+		else:
+			ConsoleDebug('Daily Image Directory Already Exists')
+
+		ConsoleDebug('Creating Graph Directory')
+		if not os.path.exists(runninglocation + '/graphs/'):
+			os.makedirs(runninglocation + '/graphs/')
+		else:
+			ConsoleDebug('Graph Directory Already Exists')
+
+		ConsoleDebug('Updating All Current Visual Directories')
+		VisualLocation = {'CurrentImageDirectory' : runninglocation + '/images/dailys/' + 'CurrentImageDirectory_' + now + '/' , 'CurrentVideoDirectory' : runninglocation + '/videos/dailys/' + 'CurrentVideoDirectory_' + now + '/' , 'CurrentGraphDirectory' : runninglocation + '/graphs/' + 'CurrentGraphDirectory_' + now + '/' }
+
+		for i in VisualLocation.itervalues():
+			ConsoleDebug('Making Directory: ' + i)
+			os.makedirs(i)
+
+	if first == False:
+		ConsoleDebug('Updating Location Of ' + kind + ' Directory')
+		if kind == 'Image':
+			VisualLocation['CurrentImageDirectory'] = runninglocation + '/images/dailys/' + 'CurrentImageDirectory_' + now + '/'
+			ConsoleDebug('Making Directory: ' + VisualLocation['CurrentImageDirectory'])
+			os.makedirs(VisualLocation['CurrentImageDirectory'])
+
+		elif kind == 'Video':
+			VisualLocation['CurrentVideoDirectory'] = runninglocation + '/videos/dailys/' + 'CurrentVideoDirectory_' + now + '/'
+			ConsoleDebug('Making Directory: ' + VisualLocation['CurrentVideoDirectory'])
+			os.makedirs(VisualLocation['CurrentVideoDirectory'])
+
+		elif kind == 'Graph':
+			VisualLocation['CurrentGraphDirectory'] = runninglocation + '/graphs/' + 'CurrentGraphDirectory_' + now + '/'
+			ConsoleDebug('Making Directory: ' + VisualLocation['CurrentGraphDirectory'])
+			os.makedirs(VisualLocation['CurrentGraphDirectory'])
+
+	ConsoleDebug('Current Image Directory' + VisualLocation['CurrentImageDirectory'])
+	ConsoleDebug('Current Video Directory' + VisualLocation['CurrentVideoDirectory'])
+	ConsoleDebug('Current Graph Directory' + VisualLocation['CurrentGraphDirectory'])
+
+	return 0
+
+#this function can be used to find out the ADC value on ADC 0
+def ReadADC0(adcnum_0):
+    if adcnum_0 > 7 or adcnum_0 < 0:
+        return -1
+    r_0 = spi_0.xfer2([1, 8 + adcnum_0 << 4, 0])
+    adcout_0 = ((r_0[1] & 3) << 8) + r_0[2]
+    return adcout_0
+
+#this function can be used to find out the ADC value on ADC 1
+def ReadADC1(adcnum_1):
+    if adcnum_1 > 7 or adcnum_1 < 0:
+        return -1
+    r_1 = spi_1.xfer2([1, 8 + adcnum_1 << 4, 0])
+    adcout_1 = ((r_1[1] & 3) << 8) + r_1[2]
+    return adcout_1
+
+#this function converts a given value from the ADC and turns it into usable data
+def ConvertADC(adcinput,unit):
+	millivolts = adcinput*(3300.0/1024.0) #converts the ADC value to milivolts
+	temp_c = ((millivolts - 100.0)/10)-40.0
+	percent = (adcinput/1024.0)*100
+	if unit == 'c' : #used for a temperature sensor to return Celsius
+		return temp_c
+	elif unit == 'f' :  #used for a temperature sensor to return Fahrenheit
+		temp_f = (temp_c * 9.0 / 5.0) + 32
+		return temp_f
+	elif unit == 'mV':
+		return millivolts
+	elif unit == '%':
+		return percent
+	else:
+		print "ConvertADC input error"
+		return 0
+	return 0
+
+#returns a usable numerical value from the ADC
+def PollSensor(sensor,unit,precision,samples):
+	GPIO.output(pins['MST_Enable'], True)
+	if PiPlanterFull == True:
+		#Full PiPlanter
+		sensors = {\
+		'P_TMP0' : ConvertADC(ReadADC0(0),unit),\
+		'P_MST0' : ConvertADC(ReadADC0(1),unit),\
+		'P_TMP1' : ConvertADC(ReadADC0(2),unit),\
+		'P_MST1' : ConvertADC(ReadADC0(3),unit),\
+		'P_TMP2' : ConvertADC(ReadADC0(4),unit),\
+		'P_MST2' : ConvertADC(ReadADC0(5),unit),\
+		'P_TMP3' : ConvertADC(ReadADC0(6),unit),\
+		'P_MST3' : ConvertADC(ReadADC0(7),unit),\
+
+		'A_TMP0' : ConvertADC(ReadADC1(0),unit),\
+		'A_LDR0' : ConvertADC(ReadADC1(1),unit),\
+		'A_LDR1' : ConvertADC(ReadADC1(2),unit),\
+		'A_MST0' : ConvertADC(ReadADC1(3),unit)}
+	else:
+		#Simple PiPlanter
+		sensors = {\
+		'P_MST0' : ConvertADC(ReadADC0(0),unit),\
+		'P_MST1' : ConvertADC(ReadADC0(1),unit),\
+		'A_TMP0' : ConvertADC(ReadADC0(2),unit),\
+		'A_LDR0' : ConvertADC(ReadADC0(3),unit)}
+
+	outputsum = 0
+	for x in range(0,samples): #An averaging algorithm that creates a more precise reading
+		outputsum = outputsum + sensors[sensor]
+	output = round(outputsum/samples, precision)
+	GPIO.output(pins['MST_Enable'], False)
+	return output
+
+#samples all sensors, outputs different formats of the data to be used in other places in the program
+def SampleAllSensors(sensor_precision,sensor_samples,form,Full):
+	global MySQL_Tables
+	global current_sensors
+	if Full == True:
+		#Full PiPlanter
+		current_sensors = {\
+		'P_TMP0' : PollSensor('P_TMP0' , 'f', sensor_precision, sensor_samples),\
+		'P_MST0' : PollSensor('P_MST0' , '%', sensor_precision, sensor_samples),\
+		'P_TMP1' : PollSensor('P_TMP1' , 'f', sensor_precision, sensor_samples),\
+		'P_MST1' : PollSensor('P_MST1' , '%', sensor_precision, sensor_samples),\
+		'P_TMP2' : PollSensor('P_TMP2' , 'f', sensor_precision, sensor_samples),\
+		'P_MST2' : PollSensor('P_MST2' , '%', sensor_precision, sensor_samples),\
+		'P_TMP3' : PollSensor('P_TMP3' , 'f', sensor_precision, sensor_samples),\
+		'P_MST3' : PollSensor('P_MST3' , '%', sensor_precision, sensor_samples),\
+		'A_TMP0' : PollSensor('A_TMP0' , 'f', sensor_precision, sensor_samples),\
+		'A_LDR0' : PollSensor('A_LDR0' , '%', sensor_precision, sensor_samples),\
+		'A_LDR1' : PollSensor('A_LDR1' , '%', sensor_precision, sensor_samples),\
+		'A_MST0' : PollSensor('A_MST0' , '%', sensor_precision, sensor_samples)}
+	else:
+		#Simple PiPlanter
+		current_sensors = {\
+		'P_MST0' : PollSensor('P_MST0' , '%', sensor_precision, sensor_samples),\
+		'P_MST1' : PollSensor('P_MST1' , '%', sensor_precision, sensor_samples),\
+		'A_TMP0' : PollSensor('A_TMP0' , 'f', sensor_precision, sensor_samples),\
+		'A_LDR0' : PollSensor('A_LDR0' , '%', sensor_precision, sensor_samples)}
+
+	if form == 'MySQL':
+		if Full == True:
+			#Full PiPlanter
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Daily'] + "(Time, P_TMP0, P_MST0, P_TMP1, P_MST1, P_TMP2, P_MST2, P_TMP3, P_MST3, A_TMP0, A_LDR0, A_LDR1, A_MST0)" + " VALUES(NOW()" + "," + str(current_sensors['P_TMP0']) + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_TMP1']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['P_TMP2']) + "," + str(current_sensors['P_MST2']) + "," + str(current_sensors['P_TMP3']) + "," + str(current_sensors['P_MST3']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + "," + str(current_sensors['A_LDR1']) + "," + str(current_sensors['A_MST0']) + ")" )
+			user.commit()
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Weekly'] + "(Time, P_TMP0, P_MST0, P_TMP1, P_MST1, P_TMP2, P_MST2, P_TMP3, P_MST3, A_TMP0, A_LDR0, A_LDR1, A_MST0)" + " VALUES(NOW()" + "," + str(current_sensors['P_TMP0']) + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_TMP1']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['P_TMP2']) + "," + str(current_sensors['P_MST2']) + "," + str(current_sensors['P_TMP3']) + "," + str(current_sensors['P_MST3']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + "," + str(current_sensors['A_LDR1']) + "," + str(current_sensors['A_MST0']) + ")" )
+			user.commit()
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Monthly'] + "(Time, P_TMP0, P_MST0, P_TMP1, P_MST1, P_TMP2, P_MST2, P_TMP3, P_MST3, A_TMP0, A_LDR0, A_LDR1, A_MST0)" + " VALUES(NOW()" + "," + str(current_sensors['P_TMP0']) + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_TMP1']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['P_TMP2']) + "," + str(current_sensors['P_MST2']) + "," + str(current_sensors['P_TMP3']) + "," + str(current_sensors['P_MST3']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + "," + str(current_sensors['A_LDR1']) + "," + str(current_sensors['A_MST0']) + ")" )
+			user.commit()
+			ConsoleDebug('MySQL Tables Updated Full')
+			output = "INSERT INTO " + MySQL_Tables['MySQLTable_Monthly'] + "(Time, P_TMP0, P_MST0, P_TMP1, P_MST1, P_TMP2, P_MST2, P_TMP3, P_MST3, A_TMP0, A_LDR0, A_LDR1, A_MST0)" + " VALUES(NOW()" + "," + str(current_sensors['P_TMP0']) + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_TMP1']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['P_TMP2']) + "," + str(current_sensors['P_MST2']) + "," + str(current_sensors['P_TMP3']) + "," + str(current_sensors['P_MST3']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + "," + str(current_sensors['A_LDR1']) + "," + str(current_sensors['A_MST0']) + ")"
+		else:
+			#Simple PiPlanter
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Daily'] + "(Time, P_MST0, P_MST1, A_TMP0, A_LDR0)" + " VALUES(NOW()" + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + ")"  )
+			user.commit()
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Weekly'] + "(Time, P_MST0, P_MST1, A_TMP0, A_LDR0)" + " VALUES(NOW()" + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + ")"  )
+			user.commit()
+			cursor.execute("INSERT INTO " + MySQL_Tables['MySQLTable_Monthly'] + "(Time, P_MST0, P_MST1, A_TMP0, A_LDR0)" + " VALUES(NOW()" + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + ")"  )
+			user.commit()
+			ConsoleDebug('MySQL Tables Updated Simple')
+			output = "INSERT INTO " + MySQL_Tables['MySQLTable_Daily'] + "(Time, P_MST0, P_MST1, A_TMP0, A_LDR0)" + " VALUES(NOW()" + "," + str(current_sensors['P_MST0']) + "," + str(current_sensors['P_MST1']) + "," + str(current_sensors['A_TMP0']) + "," + str(current_sensors['A_LDR0']) + ")"
+
+	elif form == 'Console':
+		if Full == True:
+			#Full PiPlanter
+			output = 'Debug Update:' + ' P_TMP0: ' + str(str(current_sensors['P_TMP0'])) + ',' + ' P_MST0: ' + str(str(current_sensors['P_MST0'])) + ',' + ' P_TMP1: ' + str(str(current_sensors['P_TMP1'])) + ',' + ' P_MST1: ' + str(str(current_sensors['P_MST1'])) + ','+ ' P_TMP2: ' + str(str(current_sensors['P_TMP2'])) + ','+ ' P_MST2: ' + str(str(current_sensors['P_MST2'])) + ','+ ' P_TMP3: ' + str(str(current_sensors['P_TMP3'])) + ','+ ' P_MST3: ' + str(str(current_sensors['P_MST3'])) + ',' + ' A_TMP0: ' + str(str(current_sensors['A_TMP0'])) + ',' + ' A_LDR0: ' + str(str(current_sensors['A_LDR0'])) + ','+ ' A_LDR1: ' + str(str(current_sensors['A_LDR1'])) + ','+ ' A_MST0: ' + str(str(current_sensors['A_MST0']))
+		else:
+			#Simple PiPlanter
+			output = 'Debug Update:' + ' P_MST0: ' + str(str(current_sensors['P_MST0'])) + ',' + ' P_MST1: ' + str(str(current_sensors['P_MST1'])) + ',' + ' A_TMP0: ' + str(str(current_sensors['A_TMP0'])) + ',' + ' A_LDR0: ' + str(str(current_sensors['A_LDR0']))
+	elif form == 'Twitter':
+		if Full == True:
+			#Full PiPlanter
+			output = 'Ambient LDR: ' + str(round(((current_sensors['A_LDR0'] + current_sensors['A_LDR1'])/2),1) ) + '%, ' + 'Air Temp: ' + str(round(current_sensors['A_TMP0'],1)) + 'F, ' + 'Average Plant Tmp: ' + str(round( (current_sensors['P_TMP0'] + current_sensors['P_TMP1'] + current_sensors['P_TMP2'] + current_sensors['P_TMP3'] )/4, sensor_precision-2)) + 'DF, ' + 'Ambient Mst: ' + str(round(current_sensors['A_MST0'],2)) + '%, ' + 'Average Plant Mst: ' + str(round( (current_sensors['P_MST0']+current_sensors['P_MST1']+ current_sensors['P_MST2']+ current_sensors['P_MST3'] )/4 ,1)) + '%'
+		else:
+			#Simple PiPlanter
+			output = 'Ambient Light: ' + str(round((current_sensors['A_LDR0']),1)) + '%, ' + 'Air Temp: ' + str(round(current_sensors['A_TMP0'],1)) + 'F, ' + 'Average Soil Mst: ' + str(round( (current_sensors['P_MST0']+current_sensors['P_MST1'])/2 ,1)) + '%'
+	else:
+		print "ConvertADC input SampleAllSensors"
+		return 0
+	return output
+
+#pumps a given amount of water from a given pump
+def PumpWater(pump,volume):
+	LPM = 4.00 #L per minute
+	ontime = volume*(60/LPM)
+	ConsoleDebug('PUMP ON')
+	GPIO.output(pumps[pump],True)
+	time.sleep(ontime)
+	GPIO.output(pumps[pump],False)
+	ConsoleDebug('PUMP OFF')
+	output = 'Pumped ' + str(volume) + ' L Of Water Into Plants at ' + time.strftime('%I:%M:%S') + '.'
+	ConsoleDebug(output)
+	return output
+
+def Image(dir,cycle,high_quality):
+	image = dir + str(cycle).zfill(4) + '.jpg'
+	if high_quality == False:
+		picture_command = 'raspistill -vf -hf -q 10 -o ' + image
+	if high_quality == True:
+		picture_command = 'raspistill -vf -hf -q 100 -o ' + image
+	os.system(picture_command)
+	ConsoleDebug('Image Captured, High Quality = ' + str(high_quality) + ', Image: ' + str(image))
+	return image	
+
+def RenderGraph(table,location):
+	ConsoleDebug('Rendering Graph')
+	rendercommand = 'php ' + str(os.getcwd()) + '/pChartRender_1_0_5.php ' + table + ' ' + location
+	ConsoleDebug('Running Command: ' + rendercommand)
+	proc = subprocess.Popen(rendercommand, shell=True, stdout=subprocess.PIPE)
+	script_response = proc.stdout.read()
+	ConsoleDebug('Output File: ' + script_response)
+	ConsoleDebug('Rendering Complete')
+	return script_response
+
+def TryTweet(image, imagelocation, text):
+	for i in range(10):
+		try:
+			import tweepy
+			consumer_key="KEY"
+			consumer_secret="SECRET"
+			access_token="TOKEN"
+			access_token_secret="TOKENSECRET"
+			auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+			auth.set_access_token(access_token, access_token_secret)
+			api = tweepy.API(auth)
+
+			ConsoleDebug('Attempt [' + str(i) + '] To Tweet: ' + text + ' , image = ' + str(image))
+			if image == True:
+				output = api.update_with_media(imagelocation, text)
+			if image == False:
+				output = api.update_status(status=text)
+			break
+
+		except tweepy.error.TweepError as e:
+			ConsoleDebug('Tweet Failed, Retrying')
+			ConsoleDebug('Twitter Error: ' + str(e))
+			i = i + 1
+			time.sleep(15)
+
+	if i < 10:
+		ConsoleDebug('Tweet Sent After ' + str(i) + ' Attempts, Details: Actual Text [ ' + str(output.text) + '] URL: https://twitter.com/jg_piplanter/status/' + str(output.id) )
+
+	if i == 10:
+		ConsoleDebug('Tweet Was a Failure')
+
+def RenderVideo(infolder,outfolder):
+	outputfile = outfolder + str(datetime.now().strftime("%m_%d_%Y__%I_%M_%S%p")) + '_VIDEO.avi'
+	ConsoleDebug('Attempting To Render: ' + outputfile)
+	render_command = 'sudo mencoder mf://' + str(infolder) + '*.jpg -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=16/9:vbitrate=8000000 -vf scale=1920:1080 -mf type=jpeg:fps=15 -o ' + outputfile
+	os.system(render_command)
+	ConsoleDebug('Render Complete, File: ' + outputfile)
+	return outputfile
+
+def UploadVideo(video,email,password):
+	humantime = str(datetime.now().strftime("%m/%d/%Y"))
+	title = 'Time Lapse of JG PiPlanter of the Three Days Prior To ' + str(humantime)
+	description = 'See more at http://www.joelgehringer.com/piplanter'
+	category = 'Tech'
+	keywords = 'piplanter'
+	uploadcommand = 'youtube-upload --email=' + email + ' --password=' + password + ' --title="' + title +'"'+ ' --description="' + description + '"' + ' --category=' + category + ' --keywords=' + keywords + ' ' + os.path.normpath(video)
+	ConsoleDebug('Upload Command: ' + uploadcommand)
+
+	for i in range(10):
+		try:
+			ConsoleDebug('Attempt [' + str(i) + '] To Upload: ' + str(video))
+			proc = subprocess.Popen(uploadcommand, shell=True, stdout=subprocess.PIPE)
+			output = proc.stdout.read()
+			break
+
+		except:
+			ConsoleDebug('Upload Failed, Retrying')
+			ConsoleDebug('Upload Error: ' + str(output))
+			i = i + 1
+			time.sleep(15)
+
+	if i < 10:
+		ConsoleDebug('Uploaded After ' + str(i) + ' Attempts, Details: URL [ ' + str(output) + ']' )
+		return output
+
+	if i == 10:
+		ConsoleDebug('Upload Was a Failure')
+		return 'Upload was a Failure'
+
+def TwentyMinutes():
+	global cycle
+        global image
+        
+	SampleAllSensors(1,1000,'MySQL',False)
+	ConsoleDebug(SampleAllSensors(5,1000,'Console',False))
+	image = Image(VisualLocation['CurrentImageDirectory'],cycle,False)
+	if ((current_sensors['P_MST0']+current_sensors['P_MST1'])/2)< 25.0:
+                tweet2 = PumpWater('PUMP0',2.5)
+                TryTweet(False,'',tweet2) 
+	
+	cycle = cycle + 1
+	ConsoleDebug('TwentyMinutes Complete')
+
+def OneHour():
+        image = Image(VisualLocation['CurrentImageDirectory'],cycle,False)
+	tweet = SampleAllSensors(3,20,'Twitter',False) + " http://www.joelgehringer.com/piplanter"
+	tweet = tweet = SampleAllSensors(3,20,'Twitter',False) + " http://www.joelgehringer.com/piplanter"
+
+	TryTweet(True,image,tweet)
+        ConsoleDebug('OneHour Complete')
+
+def ThreeHours():
+	graphlocation = RenderGraph(MySQL_Tables['MySQLTable_Daily'],VisualLocation['CurrentGraphDirectory'])
+	tweet = 'Graph of day so far: Moisture % - Blue, Light % - Yellow, Temp - Red  http://www.joelgehringer.com/piplanter'
+	TryTweet(True,graphlocation,tweet)
+	ConsoleDebug('ThreeHours Complete')
+
+def Daily():
+	graphlocation = RenderGraph(MySQL_Tables['MySQLTable_Daily'],VisualLocation['CurrentGraphDirectory'])
+	MySQLTableSetup(False,'Daily',False)
+	tweet = 'Graph of Previous 24 Hours: Moisture % - Blue, Light % - Yellow, Temp - Red  http://www.joelgehringer.com/piplanter'
+	TryTweet(True,graphlocation,tweet)
+	
+	ConsoleDebug('Daily Complete')
+
+def ThreeDays():
+	graphlocation = RenderGraph(MySQL_Tables['MySQLTable_Weekly'],VisualLocation['CurrentGraphDirectory'])
+	video = RenderVideo(VisualLocation['CurrentImageDirectory'],VisualLocation['CurrentVideoDirectory'])
+
+	yt_url = UploadVideo(video,"EMAIL@gmail.com","PASSWORD")
+
+	tweet1 = 'Graph of Week So Far: Moisture % - Blue, Light % - Yellow, - Red  http://www.joelgehringer.com/piplanter'
+	tweet2 = 'Time Lapse Video of Previous Three Days: ' + yt_url
+
+	TryTweet(True,graphlocation,tweet1)
+	TryTweet(False,'',tweet2)
+
+	VisualLocationSetup(False,'Image')
+	VisualLocationSetup(False,'Video')
+
+	ConsoleDebug('ThreeDays Complete')
+
+def Weekly():
+	graphlocation = RenderGraph(MySQL_Tables['MySQLTable_Weekly'],VisualLocation['CurrentGraphDirectory'])
+	tweet = 'Graph of Previous Week: Moisture % - Blue, Light % - Yellow, Temp - Red  http://www.joelgehringer.com/piplanter'
+	TryTweet(True,graphlocation,tweet)
+	MySQLTableSetup(False,'Weekly',False)
+	ConsoleDebug('Weekly Complete')
+
+if __name__ == '__main__':
+	global MySQL_Tables
+	global VisualLocation
+
+	GPIO.setmode(GPIO.BOARD)
+
+	pins = {'MST_Enable' : 8} #assign names to GPIO pins
+	for d in pins.itervalues():
+		GPIO.setup(d,GPIO.OUT)
+
+	pumps = {'PUMP0' : 7, 'PUMP1' : 11, 'PUMP2' : 13, 'PUMP3' : 16} #assign names to GPIO pins
+	for k in pumps.itervalues():
+		GPIO.setup(k,GPIO.OUT)
+
+	#first ADC setup on SPI port 1
+	spi_1 = spidev.SpiDev()
+	spi_1.open(0, 1)
+
+	#first ADC setup on SPI port 0
+	spi_0 = spidev.SpiDev()
+	spi_0.open(0, 0)
+
+	PiPlanterFull = False
+
+	user = MySQLdb.connect(host="localhost",user="root",passwd="PASSWORD")
+	cursor = user.cursor()
+
+	scheduler = BlockingScheduler()
+	scheduler.add_job(TwentyMinutes, 'interval', minutes = 20)
+	scheduler.add_job(OneHour, 'interval', hours = 1)
+	scheduler.add_job(ThreeHours,'interval', hours = 3)
+	scheduler.add_job(Daily,'interval', days=1)
+	scheduler.add_job(ThreeDays,'interval', days = 3)
+	scheduler.add_job(Weekly,'interval', weeks=1)
+
+	try:
+		FirstTimeSetup()
+
+		scheduler.start()
+
+	except (KeyboardInterrupt, SystemExit):
+		pass
