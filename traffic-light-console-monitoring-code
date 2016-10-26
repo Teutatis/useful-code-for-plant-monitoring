@@ -1,0 +1,41 @@
+# How-To-Tutorials - Jeremy Blythe 16 Aug 2013
+
+# Synopsis: Read an analogue value from an MCP3008 chip and display it via the console.
+
+# This program improves the display to the console.
+# Rather than print the value out to the screen in a scrolling window, this script will create a dashboard effect.
+# Each sensor reading is written over the top of the last so your window doesn’t scroll.
+
+# Also red, yellow and green backgrounds are used as traffic light highlights.
+# When the soil is well watered the background will be green. When it is too dry it’ll show red.
+
+# To achieve this colouring, special ANSI escape codes are used to send commands to the console.
+# Each escape code sequence starts with \x1b[ followed by the command codes to produce an effect.
+
+# https://computers.tutsplus.com/tutorials/build-a-raspberry-pi-moisture-sensor-to-monitor-your-plants--mac-52875
+
+from time import sleep
+import mcp3008
+ 
+# ANSI escape codes
+PREVIOUS_LINE="\x1b[1F"
+RED_BACK="\x1b[41;37m"
+GREEN_BACK="\x1b[42;30m"
+YELLOW_BACK="\x1b[43;30m"
+RESET="\x1b[0m"
+ 
+# Clear the screen and put the cursor at the top
+print '\x1b[2J\x1b[H'
+print 'Moisture sensor'
+print '===============\n'
+ 
+while True:
+    m = mcp3008.readadc(5)
+    if m < 150:
+        background = RED_BACK
+     elif m < 500:
+        background = YELLOW_BACK
+     else:
+        background = GREEN_BACK
+     print PREVIOUS_LINE + background + "Moisture level: {:>5} ".format(m) + RESET
+     sleep(.5)
